@@ -1,15 +1,16 @@
 import streamlit as st
 import pandas as pd
 import requests
+import urllib.parse
 
 st.set_page_config(page_title="T.O.R.E.E. Command Center", page_icon="🎭", layout="wide")
 
-# Single Master Database ID
 SHEET_ID = "1p4d1G0eTo2I_nixCTMiX1zBqdG2wt3fXIGXRPfkxOR8"
 
 @st.cache_data(ttl=2)
-def load_sheet_data(gid):
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
+def load_sheet_by_name(sheet_name):
+    encoded_name = urllib.parse.quote(sheet_name)
+    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
     try:
         df = pd.read_csv(url)
         df.columns = df.columns.str.strip()
@@ -17,34 +18,23 @@ def load_sheet_data(gid):
     except Exception:
         return pd.DataFrame()
 
-# Load Master Tabs
-inventory_data = load_sheet_data("1930217683") # MASTER LIST
-log_data = load_sheet_data("0")                # MASTER LOG
-
-if not log_data.empty:
-    log_data = log_data.dropna(how="all")
-
 st.title("T.O.R.E.E.")
 st.caption("Theater Operational Resource & Equipment Engine")
 
 mode = st.sidebar.radio("Select System Access Level:", ["Crew Member", "Administrator"])
 
-DEPARTMENTS = ["All Departments", "Sound", "Rigging", "Lighting", "Props", "Costumes"]
+DEPARTMENTS = ["Sound", "Rigging", "Lighting", "Props", "Costumes"]
 
 if mode == "Crew Member":
     st.header("📋 Equipment Movement Log")
     
-    # Pre-filter equipment list by selected department
-    selected_dept = st.selectbox("Select Your Department:", DEPARTMENTS[1:])
+    selected_dept = st.selectbox("Select Your Department:", DEPARTMENTS)
     
-    # Filter available inventory based on department
-    if not inventory_data.empty and "Department" in inventory_data.columns:
-        dept_inventory = inventory_data[inventory_data["Department"].astype(str).str.casefold() == selected_dept.casefold()]
-    else:
-        dept_inventory = inventory_data
+    # Dynamically load the selected department's Master List tab
+    inventory_data = load_sheet_by_name(f"{selected_dept.upper()} MASTER LIST")
 
-    if not dept_inventory.empty and "Item Name" in dept_inventory.columns and "Item ID" in dept_inventory.columns:
-        item_dict = dict(zip(dept_inventory["Item Name"], dept_inventory["Item ID"]))
+    if not inventory_data.empty and "Item Name" in inventory_data.columns and "Item ID" in inventory_data.columns:
+        item_dict = dict(zip(inventory_data["Item Name"], inventory_data["Item ID"]))
         item_names_list = [str(name) for name in item_dict.keys() if str(name).strip() != "nan" and str(name).strip() != ""]
     else:
         item_names_list = ["-- No Items Available for this Department --"]
@@ -109,14 +99,13 @@ elif mode == "Administrator":
             with col4:
                 st.write("")
                 st.write("")
-                st.link_button("Open Sheet ↗", f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid=1930217683")
+                st.link_button("Open Sheet ↗", f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit")
+            
+            # Fetch inventory based on selected department tab
+            inventory_data = load_sheet_by_name(f"{dept_filter.upper()} MASTER LIST")
             
             if not inventory_data.empty:
                 filtered_df = inventory_data.copy()
-                
-                # Apply Department Filter
-                if dept_filter != "All Departments" and "Department" in filtered_df.columns:
-                    filtered_df = filtered_df[filtered_df["Department"].astype(str).str.casefold() == dept_filter.casefold()]
                 
                 # Apply Location Filter
                 std_locations = ["Mainstage", "Studio Theater", "Sound Closet"]
@@ -132,13 +121,17 @@ elif mode == "Administrator":
                 
                 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
             else:
-                st.warning("Master list database offline.")
+                st.warning(f"No database tab found for '{dept_filter.upper()} MASTER LIST'.")
                 
         with tab_log:
             st.subheader("Equipment Movement Audit Log")
             
+            log_dept = st.selectbox("Select Department Log:", DEPARTMENTS)
+            log_data = load_sheet_by_name(f"{log_dept.upper()} MASTER LOG")
+            
             if not log_data.empty:
-                log_search = st.text_input("Filter Log History", placeholder="Search by crew name, department, item, or destination...")
+                log_data = log_data.dropna(how="all")
+                log_search = st.text_input("Filter Log History", placeholder="Search by crew name, item, or destination...")
                 
                 display_log = log_data.copy()
                 if log_search:
@@ -147,14 +140,14 @@ elif mode == "Administrator":
                 
                 st.dataframe(display_log, use_container_width=True, hide_index=True)
             else:
-                st.info("No movement logs recorded yet.")
+                st.info(f"No movement logs recorded yet for {log_dept}.")
             
         with tab_info:
             st.subheader("System Information & Architecture")
             st.markdown("""
             **T.O.R.E.E. Engine Status:** Operational  
-            **Active Subsystem:** Multi-Department Equipment Tracking (Sound, Rigging, Lighting, Props, Costumes)  
-            **Database Syncing:** Direct Google Sheets CSV API + Unified Webhook  
+            **Active Subsystem:** Multi-Tab Department Architecture  
+            **Supported Tabs:** SOUND MASTER LIST / LOG, RIGGING MASTER LIST / LOG  
             """)
     else:
         if admin_pass:
