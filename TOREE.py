@@ -13,7 +13,7 @@ def load_sheet_by_name(sheet_name):
     url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
     try:
         df = pd.read_csv(url)
-        df.columns = df.columns.str.strip()
+        df.columns = df.columns.astype(str).str.strip()
         return df
     except Exception:
         return pd.DataFrame()
@@ -33,8 +33,12 @@ if mode == "Crew Member":
     # Dynamically load the selected department's Master List tab
     inventory_data = load_sheet_by_name(f"{selected_dept.upper()} MASTER LIST")
 
-    if not inventory_data.empty and "Item Name" in inventory_data.columns and "Item ID" in inventory_data.columns:
-        item_dict = dict(zip(inventory_data["Item Name"], inventory_data["Item ID"]))
+    # Locate Item Name and Item ID columns dynamically (handles slight naming or case variations)
+    item_col = next((c for c in inventory_data.columns if "item" in c.lower() and "name" in c.lower()), "Item Name")
+    id_col = next((c for c in inventory_data.columns if "id" in c.lower()), "Item ID")
+
+    if not inventory_data.empty and item_col in inventory_data.columns:
+        item_dict = dict(zip(inventory_data[item_col], inventory_data[id_col] if id_col in inventory_data.columns else inventory_data[item_col]))
         item_names_list = [str(name) for name in item_dict.keys() if str(name).strip() != "nan" and str(name).strip() != ""]
     else:
         item_names_list = ["-- No Items Available for this Department --"]
@@ -95,7 +99,7 @@ elif mode == "Administrator":
             with col2:
                 loc_filter = st.selectbox("Location Filter", ["All Locations", "Mainstage", "Studio Theater", "Sound Closet", "Elsewhere"])
             with col3:
-                search_query = st.text_input("Search Equipment", placeholder="e.g., SM58, Motor, Pack...")
+                search_query = st.text_input("Search Equipment", placeholder="e.g., Motor, Truss, SM58, ID...")
             with col4:
                 st.write("")
                 st.write("")
@@ -107,17 +111,21 @@ elif mode == "Administrator":
             if not inventory_data.empty:
                 filtered_df = inventory_data.copy()
                 
-                # Apply Location Filter
+                # Apply Location Filter dynamically across columns
+                loc_col = next((c for c in filtered_df.columns if "location" in c.lower()), "Current Location")
                 std_locations = ["Mainstage", "Studio Theater", "Sound Closet"]
-                if loc_filter != "All Locations" and "Current Location" in filtered_df.columns:
+                if loc_filter != "All Locations" and loc_col in filtered_df.columns:
                     if loc_filter == "Elsewhere":
-                        filtered_df = filtered_df[~filtered_df["Current Location"].isin(std_locations)]
+                        filtered_df = filtered_df[~filtered_df[loc_col].astype(str).isin(std_locations)]
                     else:
-                        filtered_df = filtered_df[filtered_df["Current Location"] == loc_filter]
+                        filtered_df = filtered_df[filtered_df[loc_col].astype(str) == loc_filter]
                 
-                # Apply Search Query
-                if search_query and "Item Name" in filtered_df.columns:
-                    filtered_df = filtered_df[filtered_df["Item Name"].str.contains(search_query, case=False, na=False)]
+                # Full-row multi-column search filter (works across Item Name, ID, Specs, Notes, etc.)
+                if search_query:
+                    mask = filtered_df.astype(str).apply(
+                        lambda row: row.str.contains(search_query, case=False, na=False).any(), axis=1
+                    )
+                    filtered_df = filtered_df[mask]
                 
                 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
             else:
@@ -135,7 +143,9 @@ elif mode == "Administrator":
                 
                 display_log = log_data.copy()
                 if log_search:
-                    mask = display_log.astype(str).apply(lambda row: row.str.contains(log_search, case=False).any(), axis=1)
+                    mask = display_log.astype(str).apply(
+                        lambda row: row.str.contains(log_search, case=False, na=False).any(), axis=1
+                    )
                     display_log = display_log[mask]
                 
                 st.dataframe(display_log, use_container_width=True, hide_index=True)
