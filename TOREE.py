@@ -72,6 +72,8 @@ st.markdown(f"""
         top: 0px;
         right: 0px;
         z-index: 99999;
+        opacity: 0;
+        cursor: pointer;
     }}
     /* Target the streamlit button inside the container */
     .hidden-btn-container button {{
@@ -172,7 +174,7 @@ with col_main:
                 new_status = st.selectbox("Status", ["in use", "inactive", "unknown"], index=current_status_idx)
             with col_f2:
                 # Pre-fill with current location
-                loc_list = ["Mainstage", "Studio Theater", "Supply Closet", "Elsewhere"]
+                loc_list = ["Mainstage", "Studio Theater", "Supply Clo", "Elsewhere"]
                 current_loc_idx = loc_list.index(selected_item["location"]) if selected_item["location"] in loc_list else 0
                 new_loc = st.selectbox("Location", loc_list, index=current_loc_idx)
             
