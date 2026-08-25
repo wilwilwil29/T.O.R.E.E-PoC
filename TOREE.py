@@ -1,164 +1,205 @@
 import streamlit as st
-import pandas as pd
 import requests
-import urllib.parse
+import pandas as pd
 
-st.set_page_config(page_title="T.O.R.E.E. Command Center", page_icon="🎭", layout="wide")
+# --- Configuration ---
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwJQvf7vIjUdqajyzqCoOdNET233DNCpi5B3II_tvsbtUWnNzUoh2nr3HvB5O4hiYjbgQ/exec"
+BG_COLOR = "#001432" # DGS Navy Blue
+ACCENT_COLOR = "#FFFFFF"
 
-SHEET_ID = "1p4d1G0eTo2I_nixCTMiX1zBqdG2wt3fXIGXRPfkxOR8"
+# Must be the first Streamlit command
+st.set_page_config(page_title="T.O.R.E.E.", layout="wide", initial_sidebar_state="collapsed")
 
-@st.cache_data(ttl=2)
-def load_sheet_by_name(sheet_name):
-    encoded_name = urllib.parse.quote(sheet_name)
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
+# --- Initialize Session State for Easter Egg ---
+if 'horse_mode' not in st.session_state:
+    st.session_state.horse_mode = False
+
+# --- Easter Egg Screen ---
+if st.session_state.horse_mode:
+    # Full screen pink override
+    st.markdown("""
+        <style>
+        .stApp { background-color: #FF69B4 !important; }
+        .horse-text {
+            font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif;
+            font-size: 8rem;
+            color: white;
+            text-align: center;
+            margin-top: 20vh;
+        }
+        header { visibility: hidden; }
+        </style>
+        <div class="horse-text">Horse</div>
+    """, unsafe_allow_html=True)
+    
+    # Button to go back
+    if st.button("Return to T.O.R.E.E."):
+        st.session_state.horse_mode = False
+        st.rerun()
+    st.stop() # Stops rendering the rest of the app
+
+# --- Custom CSS Styling ---
+st.markdown(f"""
+    <style>
+    /* DGS Theme */
+    .stApp {{ background-color: {BG_COLOR}; color: {ACCENT_COLOR}; }}
+    
+    /* Overriding text colors for inputs and tables to ensure readability */
+    h1, h2, h3, p, label {{ color: {ACCENT_COLOR} !important; }}
+    
+    /* Master Log Retro Font */
+    .retro-log {{
+        background-color: black;
+        color: #33ff33;
+        font-family: 'Courier New', Courier, monospace; /* Closest web-safe equivalent to Apple 1 */
+        padding: 10px;
+        border-radius: 5px;
+        height: 600px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+    }}
+    
+    /* Vertical separator line */
+    .vertical-line {{
+        border-left: 2px solid gray;
+        height: 100%;
+        min-height: 800px;
+    }}
+
+    /* Tiny invisible button in top right */
+    .hidden-btn-container {{
+        position: absolute;
+        top: 0px;
+        right: 0px;
+        z-index: 99999;
+    }}
+    /* Target the streamlit button inside the container */
+    .hidden-btn-container button {{
+        opacity: 0;
+        width: 10px !important;
+        height: 10px !important;
+        padding: 0 !important;
+    }}
+    </style>
+""", unsafe_allow_html=True)
+
+# --- Easter Egg Button Trigger ---
+# This injects a tiny invisible container at the absolute top right
+col_egg = st.container()
+with col_egg:
+    st.markdown('<div class="hidden-btn-container">', unsafe_allow_html=True)
+    if st.button(" "): # Invisible button
+        st.session_state.horse_mode = True
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# --- Data Fetching & Updating Functions ---
+@st.cache_data(ttl=10) # Caches for 10 seconds to avoid spamming Google API, adjust as needed
+def fetch_data():
     try:
-        df = pd.read_csv(url)
-        df.columns = df.columns.astype(str).str.strip()
-        return df
-    except Exception:
-        return pd.DataFrame()
+        response = requests.get(APPS_SCRIPT_URL)
+        return response.json()
+    except Exception as e:
+        st.error(f"Failed to connect to backend: {e}")
+        return {"inventory": [], "logs": []}
 
-st.title("T.O.R.E.E.")
-st.caption("Theater Operational Resource & Equipment Engine")
+def update_item(dept, item_id, item_name, status, loc):
+    payload = {
+        "department": dept,
+        "item_id": item_id,
+        "item_name": item_name,
+        "status": status,
+        "location": loc
+    }
+    try:
+        requests.post(APPS_SCRIPT_URL, json=payload)
+        st.cache_data.clear() # Force refresh data on next load
+        st.rerun()
+    except Exception as e:
+        st.error(f"Failed to update item: {e}")
 
-mode = st.sidebar.radio("Select System Access Level:", ["Crew Member", "Administrator"])
 
-DEPARTMENTS = ["Sound", "Rigging", "Lighting", "Props", "Costumes"]
+# --- Main Application Layout ---
+data = fetch_data()
+inventory = data.get("inventory", [])
+logs = data.get("logs", [])
 
-if mode == "Crew Member":
-    st.header("📋 Equipment Movement Log")
+# Layout columns: Left (6 parts), Separator (0.1 parts), Right (3 parts)
+col_main, col_line, col_log = st.columns([6, 0.1, 3])
+
+# --- LEFT COLUMN: Main List & Editor ---
+with col_main:
+    st.title("T.O.R.E.E. INVENTORY")
     
-    selected_dept = st.selectbox("Select Your Department:", DEPARTMENTS)
+    # Search functionality
+    search_term = st.text_input("🔍 Search Inventory", "")
     
-    # Dynamically load the selected department's Master List tab
-    inventory_data = load_sheet_by_name(f"{selected_dept.upper()} MASTER LIST")
-
-    # Locate Item Name and Item ID columns dynamically (handles slight naming or case variations)
-    item_col = next((c for c in inventory_data.columns if "item" in c.lower() and "name" in c.lower()), "Item Name")
-    id_col = next((c for c in inventory_data.columns if "id" in c.lower()), "Item ID")
-
-    if not inventory_data.empty and item_col in inventory_data.columns:
-        item_dict = dict(zip(inventory_data[item_col], inventory_data[id_col] if id_col in inventory_data.columns else inventory_data[item_col]))
-        item_names_list = [str(name) for name in item_dict.keys() if str(name).strip() != "nan" and str(name).strip() != ""]
+    # Filter data based on search
+    if search_term:
+        filtered_inv = [item for item in inventory if search_term.lower() in str(item.values()).lower()]
     else:
-        item_names_list = ["-- No Items Available for this Department --"]
-        item_dict = {}
+        filtered_inv = inventory
 
-    with st.form("crew_log_form", clear_on_submit=True):
-        crew_name = st.text_input("1. Crew Member Name")
-        selected_item_name = st.selectbox("2. Select Equipment", options=["-- Select Item --"] + item_names_list)
-        
-        location_option = st.selectbox(
-            "3. Select Destination", 
-            options=["-- Select Destination --", "Mainstage", "Studio Theater", "Sound Closet", "Elsewhere"]
-        )
-        custom_location = st.text_input("If Elsewhere, specify exact location:")
-        
-        submit = st.form_submit_button("Log Equipment Movement")
-        
-        if submit:
-            final_location = custom_location.strip() if location_option == "Elsewhere" else (location_option if location_option != "-- Select Destination --" else "")
-
-            if crew_name and selected_item_name not in ["-- Select Item --", "-- No Items Available for this Department --"] and final_location:
-                item_id = item_dict.get(selected_item_name, "UNKNOWN_ID")
-                webhook_url = "https://script.google.com/macros/s/AKfycbwuhG91KoDreebRs1mvHFEHtnw7jdNPDmok0PGnny8NiFheadYQN52DFHyDusLP-jxrZw/exec"
-                
-                payload = {
-                    "crew_name": crew_name,
-                    "item_name": selected_item_name,
-                    "item_id": item_id,
-                    "location": final_location,
-                    "department": selected_dept
-                }
-                
-                try:
-                    response = requests.post(webhook_url, data=payload)
-                    if response.status_code == 200:
-                        st.success(f"Transmission successful: **{selected_item_name}** ({selected_dept}) relocated to **{final_location}** by **{crew_name}**.")
-                        st.info("💡 Refresh page to view live update across database.")
-                    else:
-                        st.warning("Cloud returned unexpected response.")
-                except Exception as e:
-                    st.error(f"Transmission failed: {e}")
-            else:
-                st.error("Please complete all required fields.")
-
-elif mode == "Administrator":
-    st.header("🛡️ Tactical Command & Operations")
-    admin_pass = st.sidebar.text_input("Admin Key", type="password")
-    
-    if admin_pass == "stagecraft":
-        tab_list, tab_log, tab_info = st.tabs(["🗃️ Master List", "🕒 Master Log", "ℹ️ Master Info"])
-        
-        with tab_list:
-            st.subheader("Inventory Master List")
-            
-            col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1])
-            with col1:
-                dept_filter = st.selectbox("Department", DEPARTMENTS)
-            with col2:
-                loc_filter = st.selectbox("Location Filter", ["All Locations", "Mainstage", "Studio Theater", "Sound Closet", "Elsewhere"])
-            with col3:
-                search_query = st.text_input("Search Equipment", placeholder="e.g., Motor, Truss, SM58, ID...")
-            with col4:
-                st.write("")
-                st.write("")
-                st.link_button("Open Sheet ↗", f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit")
-            
-            # Fetch inventory based on selected department tab
-            inventory_data = load_sheet_by_name(f"{dept_filter.upper()} MASTER LIST")
-            
-            if not inventory_data.empty:
-                filtered_df = inventory_data.copy()
-                
-                # Apply Location Filter dynamically across columns
-                loc_col = next((c for c in filtered_df.columns if "location" in c.lower()), "Current Location")
-                std_locations = ["Mainstage", "Studio Theater", "Sound Closet"]
-                if loc_filter != "All Locations" and loc_col in filtered_df.columns:
-                    if loc_filter == "Elsewhere":
-                        filtered_df = filtered_df[~filtered_df[loc_col].astype(str).isin(std_locations)]
-                    else:
-                        filtered_df = filtered_df[filtered_df[loc_col].astype(str) == loc_filter]
-                
-                # Full-row multi-column search filter (works across Item Name, ID, Specs, Notes, etc.)
-                if search_query:
-                    mask = filtered_df.astype(str).apply(
-                        lambda row: row.str.contains(search_query, case=False, na=False).any(), axis=1
-                    )
-                    filtered_df = filtered_df[mask]
-                
-                st.dataframe(filtered_df, use_container_width=True, hide_index=True)
-            else:
-                st.warning(f"No database tab found for '{dept_filter.upper()} MASTER LIST'.")
-                
-        with tab_log:
-            st.subheader("Equipment Movement Audit Log")
-            
-            log_dept = st.selectbox("Select Department Log:", DEPARTMENTS)
-            log_data = load_sheet_by_name(f"{log_dept.upper()} MASTER LOG")
-            
-            if not log_data.empty:
-                log_data = log_data.dropna(how="all")
-                log_search = st.text_input("Filter Log History", placeholder="Search by crew name, item, or destination...")
-                
-                display_log = log_data.copy()
-                if log_search:
-                    mask = display_log.astype(str).apply(
-                        lambda row: row.str.contains(log_search, case=False, na=False).any(), axis=1
-                    )
-                    display_log = display_log[mask]
-                
-                st.dataframe(display_log, use_container_width=True, hide_index=True)
-            else:
-                st.info(f"No movement logs recorded yet for {log_dept}.")
-            
-        with tab_info:
-            st.subheader("System Information & Architecture")
-            st.markdown("""
-            **T.O.R.E.E. Engine Status:** Operational  
-            **Active Subsystem:** Multi-Tab Department Architecture  
-            **Supported Tabs:** SOUND MASTER LIST / LOG, RIGGING MASTER LIST / LOG  
-            """)
+    # Display Data Table
+    if filtered_inv:
+        df = pd.DataFrame(filtered_inv)
+        # Rename columns for cleaner display
+        df = df.rename(columns={
+            "department": "Dept", "item_id": "ID", "item_name": "Name", 
+            "status": "Status", "location": "Location", "original_location": "Orig. Loc"
+        })
+        st.dataframe(df, use_container_width=True, hide_index=True, height=400)
     else:
-        if admin_pass:
-            st.error("Invalid Admin Key.")
+        st.info("No items found.")
+
+    st.markdown("---")
+    st.subheader("Update Item")
+    
+    if inventory:
+        # Create a dictionary mapping a readable string to the actual item dictionary
+        item_options = {f"[{item['department']}] {item['item_id']} - {item['item_name']}": item for item in inventory}
+        
+        selected_item_str = st.selectbox("Select Item to Update", options=list(item_options.keys()))
+        selected_item = item_options[selected_item_str]
+
+        # Update Form
+        with st.form("update_form"):
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                # Pre-fill with current status
+                current_status_idx = ["in use", "inactive", "unknown"].index(selected_item["status"]) if selected_item["status"] in ["in use", "inactive", "unknown"] else 0
+                new_status = st.selectbox("Status", ["in use", "inactive", "unknown"], index=current_status_idx)
+            with col_f2:
+                # Pre-fill with current location
+                loc_list = ["Mainstage", "Studio Theater", "Supply Closet", "Elsewhere"]
+                current_loc_idx = loc_list.index(selected_item["location"]) if selected_item["location"] in loc_list else 0
+                new_loc = st.selectbox("Location", loc_list, index=current_loc_idx)
+            
+            submit = st.form_submit_button("Update Item")
+            if submit:
+                update_item(
+                    selected_item["department"], 
+                    selected_item["item_id"], 
+                    selected_item["item_name"], 
+                    new_status, 
+                    new_loc
+                )
+
+# --- SEPARATOR COLUMN ---
+with col_line:
+    st.markdown('<div class="vertical-line"></div>', unsafe_allow_html=True)
+
+# --- RIGHT COLUMN: Master Log ---
+with col_log:
+    st.title("MASTER LOG")
+    
+    # Format logs (newest at top)
+    log_text = "\n".join(reversed(logs)) if logs else "No logs available."
+    
+    # Display in retro style
+    st.markdown(f'<div class="retro-log">{log_text}</div>', unsafe_allow_html=True)
+    
+    if st.button("Refresh Live Data"):
+        st.cache_data.clear()
+        st.rerun()
