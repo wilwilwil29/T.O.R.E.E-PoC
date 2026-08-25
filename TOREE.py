@@ -74,6 +74,8 @@ st.markdown(f"""
         z-index: 99999;
         opacity: 0;
         cursor: pointer;
+        border: none;
+        background: none;
     }}
     /* Target the streamlit button inside the container */
     .hidden-btn-container button {{
@@ -81,6 +83,8 @@ st.markdown(f"""
         width: 10px !important;
         height: 10px !important;
         padding: 0 !important;
+        border: none;
+        background: none;
     }}
     </style>
 """, unsafe_allow_html=True)
